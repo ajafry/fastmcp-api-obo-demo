@@ -1,0 +1,8 @@
+fastmcp
+python-dotenv
+pydantic-settings
+fastapi-azure-auth
+fastapi
+dotenv
+msal
+redis

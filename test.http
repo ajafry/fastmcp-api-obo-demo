@@ -1,0 +1,104 @@
+@baseUrl = http://localhost:8000
+@bearerToken = your_valid_bearer_token_here
+
+### Test Hello API (No authentication required)
+GET {{baseUrl}}/hello/Shakoora
+Content-Type: application/json
+
+###
+
+### Test Hello API with different name
+GET {{baseUrl}}/hello/Alice
+Content-Type: application/json
+
+###
+
+### Test Add API (Requires Azure AD authentication)
+GET {{baseUrl}}/add/10/20
+Content-Type: application/json
+Authorization: Bearer {{bearerToken}}
+
+###
+
+### Test Add API with decimal numbers
+GET {{baseUrl}}/add/10.5/20.75
+Content-Type: application/json
+Authorization: Bearer {{bearerToken}}
+
+###
+
+### Test Add API with negative numbers
+GET {{baseUrl}}/add/-5/10
+Content-Type: application/json
+Authorization: Bearer {{bearerToken}}
+
+###
+
+### Test FastAPI docs (OpenAPI/Swagger)
+GET {{baseUrl}}/docs
+Content-Type: text/html
+
+###
+
+### Test OpenAPI schema
+GET {{baseUrl}}/openapi.json
+Content-Type: application/json
+
+###
+
+## Step 1: Client sends initialize request
+## Node the session Id as that is what we will use in the next step
+POST {{baseUrl}}/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {
+      "roots": { "listChanged": true },
+      "sampling": {}
+    },
+    "clientInfo": {
+      "name": "vscode",
+      "version": "1.0.0"
+    }
+  }
+}
+
+###
+
+POST {{baseUrl}}/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+Mcp-Session-Id: dc6af4be3b8c440f8538be91ce494818
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list",
+  "params": {}
+}
+
+###
+
+POST {{baseUrl}}/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+Mcp-Session-Id: dc6af4be3b8c440f8538be91ce494818
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "add",
+    "arguments": {
+      "a": 20,
+      "b": 30
+    }
+  }
+}
