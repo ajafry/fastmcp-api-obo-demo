@@ -11,20 +11,32 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier  # Used for Tier-1 JWT
 # from shared.middleware.authorization_middleware import AuthorizationMiddleware  # Role-based filtering
 from fastmcp.server.dependencies import get_access_token, AccessToken
 
+from auth_context import AuthContext
+
 load_dotenv()
 
 TENANT_ID = os.getenv("AUTH_TENANT_ID")
+MCP_CLIENT_ID = os.getenv("MCP_CLIENT_ID")
+MCP_SECRET = os.getenv("MCP_SECRET")
+AUDIENCE = os.getenv("MCP_CLIENT_ID")
+
 logger = logging.getLogger(__name__)
 
-from fastmcp import FastMCP
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+auth_context = AuthContext(
+    tenant_id=TENANT_ID,
+    client_id=MCP_CLIENT_ID,
+    client_secret=MCP_SECRET,
+    audience=AUDIENCE
+)
 
 bearer_auth = JWTVerifier(
         jwks_uri=f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys",
         issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",  # v2.0 format
+        audience=AUDIENCE
     )
 jwks_client = PyJWKClient(f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys")
 mcp = FastMCP("MCP Server with AUTH", auth=bearer_auth)
+# mcp = FastMCP("MCP Server with AUTH", auth=auth_context.bearer_auth)
 
 async def get_token_info():
     access_token: AccessToken = get_access_token()
@@ -37,21 +49,27 @@ async def get_token_info():
         issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
         options={"verify_signature": True}
     )
+    # token_info = jwt.decode(
+    #     access_token.token, 
+    #     algorithms=["RS256"],
+    #     options={"verify_signature": True})
+
     return token_info
 
-async def is_role_available(token_info, required_role) :
-    return any(
-        r
-        for r in token_info.get("roles", [])
-        if r == required_role
-    )
+async def is_role_allowed(token_info, required_roles) :
+    return len(required_roles & set(token_info.get("roles", []))) > 0
+    # return any(
+    #     r
+    #     for r in token_info.get("roles", [])
+    #     if r in required_roles
+    # )
 
-def require_role(required_role: str):
+def require_roles(required_roles: set):
     """
     Decorator that enforces role-based access control for MCP tools.
     
     Args:
-        required_role: The role required to access the decorated function
+        required_roles: The roles required to access the decorated function
         
     Returns:
         Decorated function that checks authorization before execution
@@ -60,16 +78,16 @@ def require_role(required_role: str):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             try:
-                logger.info(f"[MCP] Checking authorization for role: {required_role}")
+                logger.info(f"[MCP] Checking authorization for role: {required_roles}")
                 
                 # Get and validate token
                 token_info = await get_token_info()
                 
                 # Check role access
-                role_access = await is_role_available(token_info, required_role)
+                role_access = await is_role_allowed(token_info, required_roles)
                 
                 if not role_access:
-                    raise PermissionError(f"Access denied. Required role: {required_role}")
+                    raise PermissionError(f"Access denied. Required role: {required_roles}")
                 
                 # If authorized, execute the original function
                 return await func(*args, **kwargs)
@@ -82,8 +100,8 @@ def require_role(required_role: str):
         return wrapper
     return decorator
 
-@mcp.tool(tags={"user"})
-@require_role("user")
+@mcp.tool(tags={"user", "superuser"})
+@require_roles({"user", "superuser"})
 async def add(a: float, b: float) -> float:
     """
     Add two numbers together.
@@ -99,8 +117,8 @@ async def add(a: float, b: float) -> float:
     result = a + b
     return result
 
-@mcp.tool(tags={"user"})
-@require_role("superusers")
+@mcp.tool(tags={"superuser"})
+@require_roles({"superuser"})
 async def subtract(a: float, b: float) -> float:
     """
     Subtract the second number from the first number.

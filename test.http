@@ -1,5 +1,5 @@
 @baseUrl = http://localhost:8000
-@bearerToken = your_valid_bearer_token_here
+@bearerToken = your_bearer_token_here
 
 ### Test Hello API (No authentication required)
 GET {{baseUrl}}/hello/Shakoora
@@ -15,6 +15,13 @@ Content-Type: application/json
 
 ### Test Add API (Requires Azure AD authentication)
 GET {{baseUrl}}/add/10/20
+Content-Type: application/json
+Authorization: Bearer {{bearerToken}}
+
+###
+
+### Test Subtract API (Requires Azure AD authentication)
+GET {{baseUrl}}/subtract/100/50
 Content-Type: application/json
 Authorization: Bearer {{bearerToken}}
 
