@@ -1,7 +1,8 @@
 import logging
 import os
 import jwt
-import requests
+from jwt import PyJWKClient
+from functools import wraps
 from dotenv import load_dotenv
 
 from fastmcp import FastMCP
@@ -22,9 +23,67 @@ bearer_auth = JWTVerifier(
         jwks_uri=f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys",
         issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",  # v2.0 format
     )
+jwks_client = PyJWKClient(f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys")
 mcp = FastMCP("MCP Server with AUTH", auth=bearer_auth)
 
+async def get_token_info():
+    access_token: AccessToken = get_access_token()
+    signing_key = jwks_client.get_signing_key_from_jwt(access_token.token)
+    token_info = jwt.decode(
+        access_token.token, 
+        signing_key.key,
+        algorithms=["RS256"],
+        audience=f"{os.getenv("MCP_CLIENT_ID")}",
+        issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
+        options={"verify_signature": True}
+    )
+    return token_info
+
+async def is_role_available(token_info, required_role) :
+    return any(
+        r
+        for r in token_info.get("roles", [])
+        if r == required_role
+    )
+
+def require_role(required_role: str):
+    """
+    Decorator that enforces role-based access control for MCP tools.
+    
+    Args:
+        required_role: The role required to access the decorated function
+        
+    Returns:
+        Decorated function that checks authorization before execution
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            try:
+                logger.info(f"[MCP] Checking authorization for role: {required_role}")
+                
+                # Get and validate token
+                token_info = await get_token_info()
+                
+                # Check role access
+                role_access = await is_role_available(token_info, required_role)
+                
+                if not role_access:
+                    raise PermissionError(f"Access denied. Required role: {required_role}")
+                
+                # If authorized, execute the original function
+                return await func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"[MCP] Authorization error in {func.__name__}: {e}")
+                return {
+                    "error": f"Authorization failed: {str(e)}"
+                }
+        
+        return wrapper
+    return decorator
+
 @mcp.tool(tags={"user"})
+@require_role("user")
 async def add(a: float, b: float) -> float:
     """
     Add two numbers together.
@@ -36,22 +95,12 @@ async def add(a: float, b: float) -> float:
     Returns:
         The sum of a and b
     """
-    access_token: AccessToken = get_access_token()
-    token_info = jwt.decode(access_token.token, options={"verify_signature": True},
-                    algorithms=["RS256"])
-    role_access = any(
-        role
-        for role in token_info.get("roles", [])
-        if role in ("user")
-    )
-    if not role_access:
-        return {
-            "error": "Access denied. You do not have permission to call this tool."
-        }
+    logger.info(f"[MCP] getting access token...")
     result = a + b
     return result
 
 @mcp.tool(tags={"user"})
+@require_role("superusers")
 async def subtract(a: float, b: float) -> float:
     """
     Subtract the second number from the first number.
@@ -63,20 +112,6 @@ async def subtract(a: float, b: float) -> float:
     Returns:
         The difference of a and b (a - b)
     """
-    logger.info("getting access token...")
-    access_token: AccessToken = get_access_token()
-    logger.info(f"Access Token: {access_token}")
-    token_info = jwt.decode(access_token.token, options={"verify_signature": False})
-    logger.info(f"Token Info: {token_info}")
-    role_access = any(
-        role
-        for role in token_info.get("roles", [])
-        if role in ("superuser")
-    )
-    if not role_access:
-        return {
-            "error": "Access denied. You do not have permission to call the SUBTRACT tool."
-        }
     result = a - b
     return result
 

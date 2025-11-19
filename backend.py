@@ -70,7 +70,15 @@ async def exchange_token(original_token: str, scope: str) -> dict:
         return {"success": False, "error": response.text}
     except Exception as e:
         return {"success": False, "error": str(e)}
-    
+
+async def get_headers(user: User) -> dict:
+    user_token = user.access_token
+    logger.info(f"=====>>> User Token: {user_token}")
+    obo_token = await exchange_token(user_token, get_env_config("MCP_SCOPES"))
+    logger.info(f"*****>>> OBO Token: {obo_token}")
+    headers = {"Authorization": f"Bearer {obo_token['access_token']}"}
+    return headers
+
 # Simple API endpoints
 @app.get("/hello/{name}")
 async def hello(name: str):
@@ -97,7 +105,7 @@ async def add_numbers(num1: float, num2: float, user: User = Security(azure_sche
     Returns:
         dict: The sum of the two numbers
     """
-    result = num1 + num2
+    # result = num1 + num2
 
     user_token = user.access_token
     logger.info(f"=====>>> User Token: {user_token}")
@@ -117,8 +125,34 @@ async def add_numbers(num1: float, num2: float, user: User = Security(azure_sche
             result = await mcp_client.call_tool("add", {"a": num1, "b": num2})
     except Exception as e:
         print(f"Error calling add: {e}")
+        return {"error": str(e)}
 
     return {"sum": result}
+
+@app.get("/subtract/{num1}/{num2}")
+async def subtract_numbers(num1: float, num2: float, user: User = Security(azure_scheme)):
+    """
+    Simple subtraction endpoint that subtracts two numbers.
+    
+    Args:
+        num1 (float): First number
+        num2 (float): Second number
+        
+    Returns:
+        dict: The difference of the two numbers
+    """    
+    mcp_client = Client(StreamableHttpTransport(
+        os.getenv("MCP_SERVER_URL"),
+        headers=await get_headers(user)
+    ))
+    try:
+        async with mcp_client:
+            result = await mcp_client.call_tool("subtract", {"a": num1, "b": num2})
+    except Exception as e:
+        print(f"Error calling subtract: {e}")
+        return {"error": str(e)}
+
+    return {"difference": result}
 
 @app.get("/mcp/", dependencies=[Security(azure_scheme)])
 async def call_mcp():
