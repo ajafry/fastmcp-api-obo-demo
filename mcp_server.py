@@ -1,18 +1,8 @@
 import logging
 import os
-import jwt
-from jwt import PyJWKClient
-from functools import wraps
 from dotenv import load_dotenv
-
 from fastmcp import FastMCP
-from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp.server.middleware.logging import LoggingMiddleware
-import logging
-from fastmcp.server.auth.providers.jwt import JWTVerifier  # Used for Tier-1 JWT token validation
-# from shared.middleware.authorization_middleware import AuthorizationMiddleware  # Role-based filtering
-from fastmcp.server.dependencies import get_access_token, AccessToken
-
 from authorization_middleware import AuthorizationMiddleware
 from auth_helper import AuthHelper
 
@@ -34,79 +24,9 @@ auth_helper = AuthHelper(
     audience=AUDIENCE
 )
 
-bearer_auth = JWTVerifier(
-        jwks_uri=f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys",
-        issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",  # v2.0 format
-        audience=AUDIENCE
-    )
-jwks_client = PyJWKClient(f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys")
-mcp = FastMCP("MCP Server with AUTH", auth=bearer_auth)
-# mcp.add_middleware(LoggingMiddleware())
-# mcp.add_middleware(AuthorizationMiddleware(bearer_auth))
+mcp = FastMCP("MCP Server with AUTH", auth=auth_helper.bearer_auth)
 mcp.add_middleware(AuthorizationMiddleware(auth_helper))
-# mcp = FastMCP("MCP Server with AUTH", auth=auth_context.bearer_auth)
-
-async def get_token_info():
-    access_token: AccessToken = get_access_token()
-    signing_key = jwks_client.get_signing_key_from_jwt(access_token.token)
-    token_info = jwt.decode(
-        access_token.token, 
-        signing_key.key,
-        algorithms=["RS256"],
-        audience=f"{os.getenv("MCP_CLIENT_ID")}",
-        issuer=f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
-        options={"verify_signature": True}
-    )
-    # token_info = jwt.decode(
-    #     access_token.token, 
-    #     algorithms=["RS256"],
-    #     options={"verify_signature": True})
-
-    return token_info
-
-async def is_role_allowed(token_info, required_roles) :
-    return len(required_roles & set(token_info.get("roles", []))) > 0
-    # return any(
-    #     r
-    #     for r in token_info.get("roles", [])
-    #     if r in required_roles
-    # )
-
-def require_roles(required_roles: set):
-    """
-    Decorator that enforces role-based access control for MCP tools.
-    
-    Args:
-        required_roles: The roles required to access the decorated function
-        
-    Returns:
-        Decorated function that checks authorization before execution
-    """
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            try:
-                logger.info(f"[MCP] Checking authorization for role: {required_roles}")
-                
-                # Get and validate token
-                token_info = await get_token_info()
-                
-                # Check role access
-                role_access = await is_role_allowed(token_info, required_roles)
-                
-                if not role_access:
-                    raise PermissionError(f"Access denied. Required role: {required_roles}")
-                
-                # If authorized, execute the original function
-                return await func(*args, **kwargs)
-            except Exception as e:
-                logger.error(f"[MCP] Authorization error in {func.__name__}: {e}")
-                return {
-                    "error": f"Authorization failed: {str(e)}"
-                }
-        
-        return wrapper
-    return decorator
+# mcp.add_middleware(LoggingMiddleware())
 
 @mcp.tool(tags={"user", "superuser"})
 async def add(a: float, b: float) -> float:
