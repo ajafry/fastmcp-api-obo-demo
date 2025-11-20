@@ -7,11 +7,14 @@ from dotenv import load_dotenv
 
 from fastmcp import FastMCP
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+from fastmcp.server.middleware.logging import LoggingMiddleware
+import logging
 from fastmcp.server.auth.providers.jwt import JWTVerifier  # Used for Tier-1 JWT token validation
 # from shared.middleware.authorization_middleware import AuthorizationMiddleware  # Role-based filtering
 from fastmcp.server.dependencies import get_access_token, AccessToken
 
-from auth_context import AuthContext
+from authorization_middleware import AuthorizationMiddleware
+from auth_helper import AuthHelper
 
 load_dotenv()
 
@@ -20,9 +23,11 @@ MCP_CLIENT_ID = os.getenv("MCP_CLIENT_ID")
 MCP_SECRET = os.getenv("MCP_SECRET")
 AUDIENCE = os.getenv("MCP_CLIENT_ID")
 
+logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger(__name__)
 
-auth_context = AuthContext(
+auth_helper = AuthHelper(
     tenant_id=TENANT_ID,
     client_id=MCP_CLIENT_ID,
     client_secret=MCP_SECRET,
@@ -36,6 +41,9 @@ bearer_auth = JWTVerifier(
     )
 jwks_client = PyJWKClient(f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys")
 mcp = FastMCP("MCP Server with AUTH", auth=bearer_auth)
+# mcp.add_middleware(LoggingMiddleware())
+# mcp.add_middleware(AuthorizationMiddleware(bearer_auth))
+mcp.add_middleware(AuthorizationMiddleware(auth_helper))
 # mcp = FastMCP("MCP Server with AUTH", auth=auth_context.bearer_auth)
 
 async def get_token_info():
@@ -101,7 +109,6 @@ def require_roles(required_roles: set):
     return decorator
 
 @mcp.tool(tags={"user", "superuser"})
-@require_roles({"user", "superuser"})
 async def add(a: float, b: float) -> float:
     """
     Add two numbers together.
@@ -118,7 +125,6 @@ async def add(a: float, b: float) -> float:
     return result
 
 @mcp.tool(tags={"superuser"})
-@require_roles({"superuser"})
 async def subtract(a: float, b: float) -> float:
     """
     Subtract the second number from the first number.
@@ -131,6 +137,21 @@ async def subtract(a: float, b: float) -> float:
         The difference of a and b (a - b)
     """
     result = a - b
+    return result
+
+@mcp.tool(tags={"outofthisworlduser", "user"})
+async def multiply(a: float, b: float) -> float:
+    """
+    Multiply the first number with the second number.
+    
+    Args:
+        a: First number
+        b: Second number
+        
+    Returns:
+        The product of a and b
+    """
+    result = a * b
     return result
 
 if __name__ == "__main__":

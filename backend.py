@@ -154,6 +154,31 @@ async def subtract_numbers(num1: float, num2: float, user: User = Security(azure
 
     return {"difference": result}
 
+@app.get("/multiply/{num1}/{num2}")
+async def multiply_numbers(num1: float, num2: float, user: User = Security(azure_scheme)):
+    """
+    Simple multiplication endpoint that multiplies two numbers.
+    
+    Args:
+        num1 (float): First number
+        num2 (float): Second number
+        
+    Returns:
+        dict: The product of the two numbers
+    """    
+    mcp_client = Client(StreamableHttpTransport(
+        os.getenv("MCP_SERVER_URL"),
+        headers=await get_headers(user)
+    ))
+    try:
+        async with mcp_client:
+            result = await mcp_client.call_tool("multiply", {"a": num1, "b": num2})
+    except Exception as e:
+        print(f"Error calling multiply: {e}")
+        return {"error": str(e)}
+
+    return {"product": result}
+
 @app.get("/mcp/", dependencies=[Security(azure_scheme)])
 async def call_mcp():
     pass
